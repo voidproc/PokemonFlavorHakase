@@ -23,17 +23,21 @@ void Main()
 
 	const auto workAreaSize = System::GetCurrentMonitor().workArea.size;
 
-	if (sceneSize.x > workAreaSize.x)
-	{
-		const auto scale = 0.9 * workAreaSize.x / sceneSize.x;
-		Window::ResizeActual(sceneSize.x * scale, sceneSize.y * scale);
-	}
-
 	if (sceneSize.y > workAreaSize.y)
 	{
 		const auto scale = 0.9 * workAreaSize.y / sceneSize.y;
 		Window::ResizeActual(sceneSize.x * scale, sceneSize.y * scale);
 	}
+	else if (sceneSize.x > workAreaSize.x)
+	{
+		const auto scale = 0.9 * workAreaSize.x / sceneSize.x;
+		Window::ResizeActual(sceneSize.x * scale, sceneSize.y * scale);
+	}
+	else
+	{
+		Window::ResizeActual(sceneSize);
+	}
+
 
 	// アセット
 
