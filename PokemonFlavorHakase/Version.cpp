@@ -2,5 +2,5 @@
 
 StringView appVersion()
 {
-	return U"1.0.0";
+	return U"1.0.1";
 }

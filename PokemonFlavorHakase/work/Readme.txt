@@ -1,5 +1,5 @@
 ﻿
-ポケモンフレーバーはかせ v1.0.0
+ポケモンフレーバーはかせ v1.0.1
 
 (c)2022 voidProc
 Pokemon: (c)Pokemon. (c)Nintendo, Creatures Inc., GAME FREAK inc.
@@ -38,4 +38,10 @@ Pokemon: (c)Pokemon. (c)Nintendo, Creatures Inc., GAME FREAK inc.
 
 ・voidproc@gmail.com
 ・https://twitter.com/voidproc
+
+
+■ 更新履歴
+
+・v1.0.1: ウィンドウサイズの調整に関する不具合修正
+・v1.0.0: 公開
 

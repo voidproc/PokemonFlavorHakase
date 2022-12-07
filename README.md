@@ -1,10 +1,10 @@
 ﻿# PokemonFlavorHakase
 
-[OpenSiv3D](https://github.com/Siv3D/OpenSiv3D) と [PokeAPI](https://pokeapi.co/) でクイズゲームを作りました。
+[OpenSiv3D](https://github.com/Siv3D/OpenSiv3D) と [PokéAPI](https://pokeapi.co/) でクイズゲームを作りました。
 
 ## ダウンロード
 
-- [Siv3D+PokeAPIでクイズゲームを作りました](https://voidproc.com/blog/archives/636)
+- [Siv3D+PokéAPIでクイズゲームを作りました](https://voidproc.com/blog/archives/636)
 
 ## 開発環境
 
