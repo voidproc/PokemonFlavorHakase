@@ -15,23 +15,24 @@ void Main()
 
 	Window::SetStyle(WindowStyle::Sizable);
 	Scene::SetResizeMode(ResizeMode::Keep);
-	Scene::Resize(1600, 1200);
+
+	const auto sceneSize = Size(1600, 1200);
+	Scene::Resize(sceneSize);
 
 	// ウィンドウがディスプレイからはみ出す場合は適当に小さくする
 
-	const auto displaySize = System::GetCurrentMonitor().displayRect.size;
-	const auto windowSize = Window::GetState().frameBufferSize;
+	const auto workAreaSize = System::GetCurrentMonitor().workArea.size;
 
-	if (windowSize.x > displaySize.x)
+	if (sceneSize.x > workAreaSize.x)
 	{
-		const auto scale = 0.9 * displaySize.x / windowSize.x;
-		Window::ResizeActual(windowSize.x * scale, windowSize.y * scale);
+		const auto scale = 0.9 * workAreaSize.x / sceneSize.x;
+		Window::ResizeActual(sceneSize.x * scale, sceneSize.y * scale);
 	}
 
-	if (windowSize.y > displaySize.y)
+	if (sceneSize.y > workAreaSize.y)
 	{
-		const auto scale = 0.9 * displaySize.y / windowSize.y;
-		Window::ResizeActual(windowSize.x * scale, windowSize.y * scale);
+		const auto scale = 0.9 * workAreaSize.y / sceneSize.y;
+		Window::ResizeActual(sceneSize.x * scale, sceneSize.y * scale);
 	}
 
 	// アセット
