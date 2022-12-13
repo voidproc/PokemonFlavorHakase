@@ -39,19 +39,19 @@ private:
 	bool fetchedJson_ = false;
 
 	// 非同期ロード用タスク
-	AsyncHTTPTask task1_;
-	AsyncHTTPTask task2_;
-	AsyncHTTPTask task3_;
+	AsyncHTTPTask taskFetchJson1_;
+	AsyncHTTPTask taskFetchJson2_;
+	AsyncHTTPTask taskFetchImage_;
 
 	// 入力データ
-	String inputText_;
-	String answer_;
+	String inputText_ = U"";
+	String answer_ = U"";
 
 	// 正解数
 	int correct_ = 0;
 
 	// 問題数
-	int question_ = 0;
+	int question_ = 1;
 
 	// モンスターボールの数
 	// 正解で１つ付与、間違うと１つ没収
@@ -77,10 +77,20 @@ private:
 
 	Effect effect_;
 
-	int maxRemainTime() const;
-	int randomPokemonId() const;
+	int maxRemainTime_() const;
+	int randomPokemonId_();
 	void beginFetchPokemonInfo_();
+
 	bool processEscapeKey_();
+	void processFetching_();
+	void nextPhase_();
+	void resetPhase_();
+	void processShowQuestionNumber_();
+	void checkInputDecided_();
+	void exitThinking_();
+	void changeToResultScene_();
+	void nextQuestion_();
+
 	void addPokemonImageEffect_();
 
 	void drawBg_() const;
@@ -88,9 +98,13 @@ private:
 	void drawError_() const;
 	void drawQuestionNumber_() const;
 	void drawMonsterBall_(double r, const Vec2& pos) const;
-	void drawLogo_() const;
+	void drawHeader_() const;
 	void drawFlavorArea_() const;
-	void drawNameArea_() const;
+	void drawNameFrame_() const;
+	void drawInputName_() const;
+	void drawKeyboardIcon_() const;
+	void drawStamp_() const;
+	void drawAnswerName_() const;
 	void drawTimer_() const;
 	void drawPokemonImage_() const;
 	void drawNextLabel_(StringView text) const;

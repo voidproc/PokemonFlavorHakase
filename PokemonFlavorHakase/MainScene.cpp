@@ -5,11 +5,8 @@ MainScene::MainScene(const InitData& init)
 	: IScene{ init }
 {
 	// 非同期データ取得開始
-	beginFetchPokemonInfo_();
 
-	fetchedJson_ = false;
-	inputText_ = answer_ = U"";
-	question_ = 1;
+	beginFetchPokemonInfo_();
 
 	// レイアウト
 
@@ -24,6 +21,8 @@ MainScene::MainScene(const InitData& init)
 		ballPosList_.push_front(logoArea_.rightCenter().movedBy(-48 - i * 28 * 2, 0));
 	}
 
+	// アイコン
+
 	for (int i = 0; i < difficultyCount(); i++)
 	{
 		difficultyIcons_.push_back(difficultyIcon(static_cast<Difficulty>(i), 80));
@@ -31,6 +30,7 @@ MainScene::MainScene(const InitData& init)
 
 	keyboardIcon_ = Texture{ 0xf11c_icon, 64 };
 
+	// シーンの経過時間
 	swScene_.restart();
 
 	// メインシーンは大きく4つのフェーズから構成する
@@ -52,139 +52,71 @@ void MainScene::update()
 
 	ballFlash_.update();
 
-	// ESCキーに関すること
-
-	if (not processEscapeKey_())
-	{
-		return;
-	}
+	// ダウンロード中
 
 	if (sw_.runningTag() == U"Fetching")
 	{
-		// ロード中
-
-		if (fetchedJson_ && task3_.isReady() && task3_.getResponse().isOK())
-		{
-			// 画像ダウンロード終了、次のフェーズへ
-
-			pokemonImage_ = Texture{ PokeAPI::PokemonImagePath };
-
-			fetchedJson_ = false;
-			inputText_ = answer_ = U"";
-			sw_.next();
-		}
-
-		if (task1_.isReady() && task2_.isReady() && not fetchedJson_)
-		{
-			// JSON取得完了、画像取得へ
-
-			pokemonInfo_ = PokeAPI::flavorInfo(task1_, task2_);
-			fetchedJson_ = true;
-
-			if (pokemonInfo_)
-			{
-				task3_ = PokeAPI::fetchPokemonImageAsync(pokemonInfo_->imageUrl);
-			}
-			else
-			{
-				// データ取得できなかったのでロード中止
-
-				fetchedJson_ = false;
-				inputText_ = answer_ = U"";
-				sw_.next();
-			}
-		}
+		processFetching_();
 	}
 	else
 	{
-		// ロード中じゃなくて…
+		// データ取得に失敗してたらエラー時の処理
 
 		if (not pokemonInfo_)
 		{
-			// データ取得失敗してたらエラーメッセージ
-
 			if (sw_.running().sF() > 3.0 && KeyEnter.down())
 			{
 				beginFetchPokemonInfo_();
 
-				fetchedJson_ = false;
-				inputText_ = answer_ = U"";
-				sw_.restart();
+				resetPhase_();
 			}
 
 			return;
 		}
 	}
 
+	// 「第〇問」を表示中
+
 	if (sw_.runningTag() == U"QuestionNumber")
 	{
-		if (sw_.running().sF() > 1.3)
+		processShowQuestionNumber_();
+	}
+
+	// ESCキーに関すること
+
+	if ((sw_.runningTag() == U"Thinking" || sw_.runningTag() == U"Judge"))
+	{
+		const bool continueMainScene = processEscapeKey_();
+
+		if (not continueMainScene)
 		{
-			sw_.next();
-			swFlavorText_.restart();
+			return;
 		}
 	}
+
+	// 問題文が表示されて、答えを入力できる
 
 	if (sw_.runningTag() == U"Thinking")
 	{
 		// 名前入力を受け付け
 		TextInput::UpdateText(inputText_, TextInputMode::AllowBackSpaceDelete);
 
-		if (not inputText_.isEmpty() && TextInput::GetEditingText().isEmpty() && not swInputDecided_.isStarted())
-		{
-			// 名前入力を確定してからの経過時間を計測スタート
-			swInputDecided_.restart();
-		}
-		else if (inputText_.isEmpty() || not TextInput::GetEditingText().isEmpty())
-		{
-			swInputDecided_.reset();
-		}
+		checkInputDecided_();
 
 		// ①名前入力を確定後、少し経過してからエンターが押されたので答え合わせへ
 		//   （即答え合わせにならないための時間制限）
 		// ②残り時間がなくなったので答え合わせへ
 
 		if ((swInputDecided_.sF() > 0.3 && KeyEnter.down()) ||
-			(maxRemainTime() - sw_.running().s() < 0))
+			(maxRemainTime_() - sw_.running().s() < 0))
 		{
-			// 考えタイム終了
-
-			answer_ = inputText_;
-
-			if ((answer_ == pokemonInfo_->name)
-#ifdef DEBUGMODE
-				|| (answer_ == U"あ")
-#endif
-				)
-			{
-				if (ball_ < 5)
-				{
-					ball_++;
-
-					// ボール増えたエフェクト
-					ballFlash_.start(ballPosList_[ball_ - 1], BallFlashType::Receive);
-
-					correct_++;
-				}
-			}
-			else
-			{
-				if (ball_ > 0)
-				{
-					ball_--;
-
-					// ボール減ったエフェクト
-					ballFlash_.start(ballPosList_[ball_], BallFlashType::Lose);
-				}
-			}
-
-			sw_.next();
-
-			// ポケモン画像の位置にエフェクト
-			addPokemonImageEffect_();
+			exitThinking_();
 		}
 	}
-	else if (sw_.runningTag() == U"Judge")
+
+	// 答え表示中
+
+	if (sw_.runningTag() == U"Judge")
 	{
 		if (sw_.running().sF() > 1.0 && KeyEnter.down())
 		{
@@ -193,20 +125,11 @@ void MainScene::update()
 
 			if (ball_ >= 5)
 			{
-				getData().questionCount = question_;
-				getData().elapsedTime = swScene_.sF();
-
-				changeScene(U"ResultScene", 2000ms);
+				changeToResultScene_();
 			}
 			else
 			{
-				// 次のポケモンのデータを非同期取得開始
-				beginFetchPokemonInfo_();
-
-				fetchedJson_ = false;
-				inputText_ = answer_ = U"";
-				question_++;
-				sw_.next();
+				nextQuestion_();
 			}
 		}
 	}
@@ -242,6 +165,8 @@ void MainScene::draw() const
 		}
 	}
 
+	// 「第〇問」を表示中
+
 	if (sw_.runningTag() == U"QuestionNumber")
 	{
 		drawQuestionNumber_();
@@ -249,39 +174,69 @@ void MainScene::draw() const
 		return;
 	}
 
+	// 以下、Thinking OR Judge
+
 	drawFlavorArea_();
 
 	drawTimer_();
 
-	drawNameArea_();
+	drawNameFrame_();
+
+	if (sw_.runningTag() == U"Thinking")
+	{
+		drawInputName_();
+
+		// 確定済みの文字のみだったら「エンターで答え合わせ」と表示
+		if (not inputText_.isEmpty() && TextInput::GetEditingText().isEmpty() && swInputDecided_.sF() > 0.3)
+		{
+			drawNextLabel_(U"エンターで　答えあわせ");
+		}
+
+		drawKeyboardIcon_();
+	}
+	else if (sw_.runningTag() == U"Judge")
+	{
+		drawStamp_();
+
+		drawAnswerName_();
+
+		// 1秒後にメッセージ出す
+		if (sw_.running().sF() > 1.0)
+		{
+			if (ball_ >= 5)
+			{
+				drawNextLabel_(U"おつかれさま!　エンターで　つぎへ");
+			}
+			else
+			{
+				drawNextLabel_(U"エンターで　つぎの問題");
+			}
+		}
+	}
 
 	drawPokemonImage_();
 
-	drawLogo_();
+	drawHeader_();
 
 	ballFlash_.draw();
 
+	// ESCキーに関すること
 	drawEscapeWarning_();
 }
 
-int MainScene::maxRemainTime() const
+int MainScene::maxRemainTime_() const
 {
 	return 30;
 }
 
-int MainScene::randomPokemonId() const
+int MainScene::randomPokemonId_()
 {
-	return Random(1, maxPokemonId(getData().difficulty));
-}
-
-void MainScene:: beginFetchPokemonInfo_()
-{
-	int id = randomPokemonId();
+	int id = Random(1, maxPokemonId(getData().difficulty));
 
 	// 直近の10個と近すぎるIDが出たら再抽選
 	if (recentId_.includes_if([&id](int x) { return abs(id - x) < 3; }))
 	{
-		id = randomPokemonId();
+		id = randomPokemonId_();
 	}
 
 	recentId_.push_back(id);
@@ -291,38 +246,189 @@ void MainScene:: beginFetchPokemonInfo_()
 		recentId_.pop_front();
 	}
 
+	return id;
+}
+
+void MainScene:: beginFetchPokemonInfo_()
+{
+	int id = randomPokemonId_();
+
 	// 非同期でPokeAPIのJSONを取得開始
 
-	task1_.cancel();
-	task2_.cancel();
-	task3_.cancel();
+	taskFetchJson1_.cancel();
+	taskFetchJson2_.cancel();
+	taskFetchImage_.cancel();
 
-	task1_ = PokeAPI::fetchPokemonSpeciesJsonAsync(id);
-	task2_ = PokeAPI::fetchPokemonJsonAsync(id);
+	taskFetchJson1_ = PokeAPI::fetchPokemonSpeciesJsonAsync(id);
+	taskFetchJson2_ = PokeAPI::fetchPokemonJsonAsync(id);
 }
 
 bool MainScene::processEscapeKey_()
 {
-	if ((sw_.runningTag() == U"Thinking" || sw_.runningTag() == U"Judge"))
+	// ESC長押し2sでタイトルへ戻れる
+
+	if (KeyEscape.pressedDuration() >= (2s + 0.4s + 0.1s))
 	{
-		// ESC長押し2sでタイトルへ戻れる
+		changeScene(U"TitleScene", 0s);
 
-		if (KeyEscape.pressedDuration() >= (2s + 0.4s + 0.1s))
-		{
-			changeScene(U"TitleScene", 0s);
+		return false; // このフレームでの、以降のupdate処理を中断
+	}
 
-			return false; // このフレームでの、以降のupdate処理を中断
-		}
+	// ESCキーが一瞬押されたとき、タイトルに戻れる案内を小さく表示
 
-		// ESCキーが一瞬押されたとき、タイトルに戻れる案内を小さく表示
-
-		if (KeyEscape.down())
-		{
-			swEscDown_.restart();
-		}
+	if (KeyEscape.down())
+	{
+		swEscDown_.restart();
 	}
 
 	return true;
+}
+
+void MainScene::processFetching_()
+{
+	// ダウンロード中…
+
+	if (fetchedJson_)
+	{
+		const bool fetchedImage = taskFetchImage_.isReady() && taskFetchImage_.getResponse().isOK();
+
+		if (fetchedImage)
+		{
+			// 画像ダウンロード終了、次のフェーズへ
+
+			pokemonImage_ = Texture{ PokeAPI::PokemonImagePath };
+
+			nextPhase_();
+		}
+	}
+	else
+	{
+		const bool fetchedAllJson = taskFetchJson1_.isReady() && taskFetchJson2_.isReady();
+
+		if (fetchedAllJson)
+		{
+			// JSON取得完了
+
+			fetchedJson_ = true;
+
+			// 画像取得へ
+
+			pokemonInfo_ = PokeAPI::flavorInfo(taskFetchJson1_, taskFetchJson2_);
+
+			if (not pokemonInfo_)
+			{
+				// データ取得できなかったのでロード中止
+
+				nextPhase_();
+
+				return;
+			}
+
+			taskFetchImage_ = PokeAPI::fetchPokemonImageAsync(pokemonInfo_->imageUrl);
+		}
+	}
+}
+
+void MainScene::nextPhase_()
+{
+	fetchedJson_ = false;
+	inputText_ = answer_ = U"";
+	sw_.next();
+}
+
+void MainScene::resetPhase_()
+{
+	fetchedJson_ = false;
+	inputText_ = answer_ = U"";
+	sw_.restart();
+}
+
+void MainScene::processShowQuestionNumber_()
+{
+	if (sw_.running().sF() > 1.3)
+	{
+		swFlavorText_.restart();
+
+		nextPhase_();
+	}
+}
+
+void MainScene::checkInputDecided_()
+{
+	// 名前入力を確定してからの経過時間 swInputDecided の制御
+	// ・確定していてまだ計測開始してないなら、計測開始
+	// ・未入力か入力中なら、計測停止
+
+	const bool decided = not inputText_.isEmpty() && TextInput::GetEditingText().isEmpty();
+
+	if (decided)
+	{
+		if (not swInputDecided_.isStarted())
+		{
+			swInputDecided_.restart();
+		}
+	}
+	else
+	{
+		swInputDecided_.reset();
+	}
+}
+
+void MainScene::exitThinking_()
+{
+	// 考えタイム終了
+
+	answer_ = inputText_;
+
+	if ((answer_ == pokemonInfo_->name)
+#ifdef DEBUGMODE
+		|| (answer_ == U"あ")
+#endif
+		)
+	{
+		if (ball_ < 5)
+		{
+			ball_++;
+
+			// ボール増えたエフェクト
+			ballFlash_.start(ballPosList_[ball_ - 1], BallFlashType::Receive);
+
+			correct_++;
+		}
+	}
+	else
+	{
+		if (ball_ > 0)
+		{
+			ball_--;
+
+			// ボール減ったエフェクト
+			ballFlash_.start(ballPosList_[ball_], BallFlashType::Lose);
+		}
+	}
+
+	// ポケモン画像の位置にエフェクト
+	addPokemonImageEffect_();
+
+	nextPhase_();
+}
+
+void MainScene::changeToResultScene_()
+{
+	getData().questionCount = question_;
+	getData().elapsedTime = swScene_.sF();
+
+	changeScene(U"ResultScene", 2000ms);
+}
+
+void MainScene::nextQuestion_()
+{
+	// 次のポケモンのデータを非同期取得開始
+	beginFetchPokemonInfo_();
+
+	question_++;
+
+	nextPhase_();
 }
 
 void MainScene::addPokemonImageEffect_()
@@ -439,7 +545,7 @@ void MainScene::drawMonsterBall_(double r, const Vec2& pos) const
 	Circle(Arg::center = pos, r).drawFrame(outlineFrameWidth, lineColor);
 }
 
-void MainScene::drawLogo_() const
+void MainScene::drawHeader_() const
 {
 	const auto logoText = U"ポケモンフレーバーはかせ";
 	const auto logoRegion = FontAsset(U"titleSmall")(logoText).region();
@@ -487,24 +593,6 @@ void MainScene::drawLogo_() const
 	{
 		drawMonsterBall_(24, ballPosList_[i]);
 	}
-
-
-	// 正答数など
-
-	if (false)
-	{
-		if (sw_.runningTag() == U"Judge")
-		{
-			const auto statusText = U"成績：{} / {}"_fmt(correct_, question_);
-			const auto statusRegion = FontAsset(U"sys")(statusText).region();
-			const auto statusFontSize = 36;
-			const auto statusCenter = logoArea_.rightCenter() - Vec2(statusRegion.w / 2, 0);
-			const auto statusColor = Palette::Whitesmoke;
-
-			FontAsset(U"sys")(statusText).drawAt(statusFontSize, statusCenter + Vec2(4, 4), ColorF(0, 0, 0, 0.1));
-			FontAsset(U"sys")(statusText).drawAt(statusFontSize, statusCenter, statusColor);
-		}
-	}
 }
 
 void MainScene::drawFlavorArea_() const
@@ -539,10 +627,8 @@ void MainScene::drawFlavorArea_() const
 
 }
 
-void MainScene::drawNameArea_() const
+void MainScene::drawNameFrame_() const
 {
-	// 枠線
-
 	const auto nameBgColor = ColorF(1.0, 0.97, 1.0);
 	const auto nameFrameWidth = 10;
 	const auto nameFrameTopColor = ColorF(Palette::Blueviolet, 0.7);
@@ -554,117 +640,99 @@ void MainScene::drawNameArea_() const
 		.draw(nameBgColor)
 		.drawFrame(nameFrameWidth, Arg::top = nameFrameTopColor, Arg::bottom = nameFrameBottomColor)
 		.drawFrame(2, Palette::Blueviolet);
+}
 
-
+void MainScene::drawInputName_() const
+{
 	// 入力中の名前
 	const auto inputName = inputText_ + TextInput::GetEditingText();
 
-	if (sw_.runningTag() == U"Thinking")
+	if (inputName.isEmpty())
 	{
-		if (inputName.isEmpty())
-		{
-			// テキストボックスが空
+		// テキストボックスが空
 
-			const auto text = U"ポケモンのなまえは？";
-			const auto textFontSize = 96;
-			const auto textCenter = nameArea.center();
-			const auto textColor = ColorF(0.4, 0.4, 0.4, 0.2);
+		const auto text = U"ポケモンのなまえは？";
+		const auto textFontSize = 96;
+		const auto textCenter = nameArea_.center();
+		const auto textColor = ColorF(0.4, 0.4, 0.4, 0.2);
 
-			FontAsset(U"pokemonName")(text).drawAt(textFontSize, textCenter, textColor);
+		FontAsset(U"pokemonName")(text).drawAt(textFontSize, textCenter, textColor);
 
-			// カーソル
+		// カーソル
 
-			const auto cursorPos = nameArea.center();
-			const auto cursorColor = blinkColor(ColorF(0.4, 0.4, 0.4), ColorF(0,0,0,0), 800ms);
+		const auto cursorPos = nameArea_.center();
+		const auto cursorColor = blinkColor(ColorF(0.4, 0.4, 0.4), ColorF(0, 0, 0, 0), 800ms);
 
-			Line(cursorPos + Vec2(0, -48), cursorPos + Vec2(0, 48)).draw(6.0, cursorColor);
-		}
-		else
-		{
-			// 入力中……
-			// 確定済みと、入力中を色分けして表示する
-
-			const auto region = FontAsset(U"pokemonName")(inputName).region();
-			auto penPos = nameArea.center() - region.size / 2;
-
-			for (auto [index, glyph] : Indexed(FontAsset(U"pokemonName").getGlyphs(inputName)))
-			{
-				const auto charColor = (index >= inputText_.length()) ? ColorF(0.5, 0.5, 0.5) : ColorF(0.12, 0.13, 0.10);
-
-				glyph.texture.draw(penPos + glyph.getOffset(), charColor);
-				penPos.x += glyph.xAdvance;
-			}
-
-			// カーソル
-
-			const auto cursorPos = nameArea.center().movedBy(region.w / 2 + 8, 0);
-			const auto cursorColor = blinkColor(ColorF(0.4, 0.4, 0.4), ColorF(0, 0, 0, 0), 800ms);
-
-			Line(cursorPos + Vec2(0, -48), cursorPos + Vec2(0, 48)).draw(6.0, cursorColor);
-
-			// 確定済みの文字のみだったら「エンターで答え合わせ」と表示
-
-			if (TextInput::GetEditingText().isEmpty() && swInputDecided_.sF() > 0.3)
-			{
-				drawNextLabel_(U"エンターで　答えあわせ");
-			}
-		}
-
-		// キーボードアイコン
-		const auto kbdIconPos = nameArea_.pos.movedBy(16, 16);
-		const auto kbdIconSize = 56 - 8 * Periodic::Sine0_1(400ms);
-		const auto kbdIconColor = ColorF(Palette::Whitesmoke, 1.0 - 0.1 * Periodic::Square0_1(400ms));
-
-		Circle(Arg::center = kbdIconPos, kbdIconSize).draw(Palette::Blueviolet);
-		keyboardIcon_.scaled(1 - 0.08 * Periodic::Sine0_1(400ms)).drawAt(kbdIconPos, kbdIconColor);
-
-
+		Line(cursorPos + Vec2(0, -48), cursorPos + Vec2(0, 48)).draw(6.0, cursorColor);
 	}
-	else if (sw_.runningTag() == U"Judge")
+	else
 	{
-		// 「せいかい！」or「ざんねん！」のスタンプ
+		// 入力中……
+		// 確定済みと、入力中を色分けして表示する
 
-		const auto stampPos = nameArea.rect.leftCenter();
-		const bool isCorrect = (answer_ == pokemonInfo_->name);
-		const ColorF stampColor{ isCorrect ? U"#03b289" : U"#d34026" };
-		const auto stampText = isCorrect ? U"せいかい!" : U"ざんねん!\n正解は…";
-		const auto stampFontSize = 40;
-		const auto stampTextColor = Palette::Whitesmoke;
+		const auto region = FontAsset(U"pokemonName")(inputName).region();
+		auto penPos = nameArea_.center() - region.size / 2;
 
-		Shape2D::NStar(12, 144, 108, stampPos, 0).draw(stampColor);
-		FontAsset(U"sys")(stampText).drawAt(stampFontSize, stampPos, stampTextColor);
-
-
-		// 正解の名前
-
-		const auto name = pokemonInfo_->name;
-		const auto nameFontSize = 96;
-		const auto namePos = nameArea.center();
-		const ColorF nameColor{ 0.12, 0.13, 0.10 };
-
-		FontAsset(U"pokemonName")(name).drawAt(nameFontSize, namePos, nameColor);
-
-		// 1秒後にメッセージ出す
-
-		if (sw_.running().sF() > 1.0)
+		for (auto [index, glyph] : Indexed(FontAsset(U"pokemonName").getGlyphs(inputName)))
 		{
-			if (ball_ >= 5)
-			{
-				drawNextLabel_(U"おつかれさま!　エンターで　つぎへ");
-			}
-			else
-			{
-				drawNextLabel_(U"エンターで　つぎの問題");
-			}
+			const auto charColor = (index >= inputText_.length()) ? ColorF(0.5, 0.5, 0.5) : ColorF(0.12, 0.13, 0.10);
+
+			glyph.texture.draw(penPos + glyph.getOffset(), charColor);
+			penPos.x += glyph.xAdvance;
 		}
+
+		// カーソル
+
+		const auto cursorPos = nameArea_.center().movedBy(region.w / 2 + 8, 0);
+		const auto cursorColor = blinkColor(ColorF(0.4, 0.4, 0.4), ColorF(0, 0, 0, 0), 800ms);
+
+		Line(cursorPos + Vec2(0, -48), cursorPos + Vec2(0, 48)).draw(6.0, cursorColor);
 	}
+}
+
+void MainScene::drawKeyboardIcon_() const
+{
+	// キーボードアイコン
+	const auto kbdIconPos = nameArea_.pos.movedBy(16, 16);
+	const auto kbdIconSize = 56 - 8 * Periodic::Sine0_1(400ms);
+	const auto kbdIconColor = ColorF(Palette::Whitesmoke, 1.0 - 0.1 * Periodic::Square0_1(400ms));
+
+	Circle(Arg::center = kbdIconPos, kbdIconSize).draw(Palette::Blueviolet);
+	keyboardIcon_.scaled(1 - 0.08 * Periodic::Sine0_1(400ms)).drawAt(kbdIconPos, kbdIconColor);
+}
+
+void MainScene::drawStamp_() const
+{
+	// 「せいかい！」or「ざんねん！」のスタンプ
+
+	const auto stampPos = nameArea_.leftCenter();
+	const bool isCorrect = (answer_ == pokemonInfo_->name);
+	const ColorF stampColor{ isCorrect ? U"#03b289" : U"#d34026" };
+	const auto stampText = isCorrect ? U"せいかい!" : U"ざんねん!\n正解は…";
+	const auto stampFontSize = 40;
+	const auto stampTextColor = Palette::Whitesmoke;
+
+	Shape2D::NStar(12, 144, 108, stampPos, 0).draw(stampColor);
+	FontAsset(U"sys")(stampText).drawAt(stampFontSize, stampPos, stampTextColor);
+}
+
+void MainScene::drawAnswerName_() const
+{
+	// 正解の名前
+
+	const auto name = pokemonInfo_->name;
+	const auto nameFontSize = 96;
+	const auto namePos = nameArea_.center();
+	const ColorF nameColor{ 0.12, 0.13, 0.10 };
+
+	FontAsset(U"pokemonName")(name).drawAt(nameFontSize, namePos, nameColor);
 }
 
 void MainScene::drawTimer_() const
 {
 	if (sw_.runningTag() == U"Thinking")
 	{
-		const auto remainTime = Max(0, maxRemainTime() - sw_.running().s());
+		const auto remainTime = Max(0, maxRemainTime_() - sw_.running().s());
 		const auto timerFontSize = (remainTime >= 10) ? 256 : ((remainTime > 3) ? 290 : 320);
 		const auto timerColor = (remainTime > 5) ? ColorF(U"#ab6ce2") : ColorF(U"#e56083");
 		const auto timerText = U"{}"_fmt(remainTime);
@@ -673,7 +741,7 @@ void MainScene::drawTimer_() const
 
 		const auto t = Periodic::Sawtooth0_1(1s, sw_.running().sF());
 		const auto angle = EaseInOutCubic(t) * Math::TwoPiF;
-		const auto angleOffset = sw_.running().sF() * Math::TwoPiF / (maxRemainTime() + 1.0);
+		const auto angleOffset = sw_.running().sF() * Math::TwoPiF / (maxRemainTime_() + 1.0);
 		Circle{ Arg::center = timerPos.movedBy(16,0), 180 }.drawArc(angle + angleOffset, Math::TwoPiF - angle, 64, 0, ColorF(timerColor, 0.5));
 		Circle{ Arg::center = timerPos.movedBy(16,0), 180 }.drawArc(0, Math::TwoPiF, 64, 0, ColorF(timerColor, 0.5*t));
 

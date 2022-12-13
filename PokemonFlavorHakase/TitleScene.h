@@ -23,7 +23,7 @@ private:
 	// 難易度を切り替えるときにアイコンを少し拡縮したりする用
 	Stopwatch swChangeDifficulty_{ StartImmediately::Yes };
 
-	void drawLogo_() const;
+	void drawHeader_() const;
 
 	void drawCopy_() const;
 

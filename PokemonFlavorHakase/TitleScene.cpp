@@ -62,7 +62,7 @@ void TitleScene::draw() const
 
 	Scene::SetBackground(bgColor);
 
-	drawLogo_();
+	drawHeader_();
 
 	if (swScene_.sF() > 3.0)
 	{
@@ -74,7 +74,7 @@ void TitleScene::draw() const
 	}
 }
 
-void TitleScene::drawLogo_() const
+void TitleScene::drawHeader_() const
 {
 	const String logoText = U"ポケモンフレーバーはかせ";
 	const auto logoRegion = FontAsset(U"title")(logoText).region();
